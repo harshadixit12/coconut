@@ -1,8 +1,11 @@
-use std::env;
+use std::{env};
 use lrlex::lrlex_mod;
 use lrpar::lrpar_mod;
 
 mod ast;
+mod instruction;
+use ast::Node;
+use instruction::Op;
 
 lrlex_mod!("coconut.l");
 lrpar_mod!("coconut.y");
@@ -21,7 +24,7 @@ fn main() {
     }
 }
 
-pub fn from_str (input: &String) -> Result<u64, String> {
+pub fn from_str (input: &String) -> Result<Option<u64>, String> {
     let lexer_def = coconut_l::lexerdef();
         let lexer = lexer_def.lexer(&input);
         let (res, errs) = coconut_y::parse(&lexer);
@@ -31,7 +34,7 @@ pub fn from_str (input: &String) -> Result<u64, String> {
         }
 
         match res {
-            Some(Ok(r)) => eval(r),
+            Some(Ok(r)) => Ok(eval_bytecode(r)),
             _ => Err("Unable to evaluate input".to_string()),
         }
 }
@@ -57,17 +60,64 @@ fn eval_exp (exp: ast::Node) -> Result<u64, String> {
     }
 }
 
+pub fn ast_to_bytecode (node: Node, ops: &mut Vec<Op>) {
+    match node {
+        Node::Add { lhs, rhs } => {
+            ast_to_bytecode(*lhs, ops);
+            ast_to_bytecode(*rhs, ops);
+            ops.push(Op::Add{});
+        }
+        Node::Mul {lhs, rhs} => {
+            ast_to_bytecode(*lhs, ops);
+            ast_to_bytecode(*rhs, ops);
+            ops.push(Op::Mull{});
+        }
+        Node::Number {value} => {
+            ops.push(Op::Push{value});
+        }
+    }
+}
+
+pub fn eval_bytecode (ast: Vec<Node>) -> Option<u64> {
+    let ops = &mut vec![];
+
+    for node in ast {
+        ast_to_bytecode(node, ops);
+    }
+
+    let mut stack: Vec<u64> = vec![];
+
+    for instruction in ops {
+        match instruction {
+            Op::Push { value } => stack.push(*value),
+            Op::Add => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(lhs + rhs);
+            }
+            Op::Mull => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(lhs * rhs);
+            }
+        }
+    }
+
+    return stack.pop();
+
+}
+
 #[test]
 fn eval_expressions() {
     assert_eq!(
         from_str(&"1 + 2 * 3 + 4".to_string()).unwrap(),
-        11,
+        Some(11),
         "expected 11"
     );
 
     assert_eq!(
         from_str(&"(1 + 2) * 3 + 4".to_string()).unwrap(),
-        13,
+        Some(13),
         "expected 13"
     );
 }
