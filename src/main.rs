@@ -1,4 +1,4 @@
-use std::{env};
+use std::{env, fs, io::{stdin, stdout, Write}};
 use lrlex::lrlex_mod;
 use lrpar::lrpar_mod;
 
@@ -14,13 +14,45 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
         let input = &args[1];
-        match from_str(input) {
-            Ok(r) => println!("{:?}", r),
-            _ => eprintln!("Unable to evaluate input"),
+        if input.ends_with(".cnt".clone()) {
+            eval_file(args[1].clone());
+        }
+        else {
+            eval(&input);
         }
     }
     else {
-        println!("Please provide an input string to evaluate");
+        repl();
+    }
+}
+
+fn eval_file(input: String) {
+    match fs::read_to_string(input) {
+        Ok(content) => {
+            eval(&content);
+        }
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+        }
+    }
+}
+
+pub fn repl () {
+    loop {
+        print!(">");
+        stdout().flush().unwrap();
+        match stdin().lines().next() {
+            Some(Ok(input)) => {
+                if input.trim() == "exit" {
+                    break;
+                }
+                if input.trim().is_empty() {
+                    continue;
+                }
+                eval(&input);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -39,24 +71,10 @@ pub fn from_str (input: &String) -> Result<Option<u64>, String> {
         }
 }
 
-pub fn eval (ast: Vec<ast::Node>) -> Result<u64, String> {
-    for node in ast {
-        return eval_exp(node);
-    }
-    return Err(String::from("Couldn't evaluate AST!"));
-}
-
-fn eval_exp (exp: ast::Node) -> Result<u64, String> {
-    match exp {
-        ast::Node::Add {lhs, rhs} => eval_exp(*lhs)?
-            .checked_add(eval_exp(*rhs)?)
-            .ok_or("Overflow".to_string()),
-
-        ast::Node::Mul {lhs, rhs} => eval_exp(*lhs)?
-            .checked_mul(eval_exp(*rhs)?)
-            .ok_or("Overflow".to_string()),
-
-        ast::Node::Number {value} => Ok(value)
+pub fn eval (input: &String) {
+    match from_str(input) {
+        Ok(Some(result)) => println!("{}", result),
+        _ => println!("Error: {}", "Unable to evaluate input"),
     }
 }
 
@@ -119,5 +137,14 @@ fn eval_expressions() {
         from_str(&"(1 + 2) * 3 + 4".to_string()).unwrap(),
         Some(13),
         "expected 13"
+    );
+}
+
+#[test]
+fn eval_comments() {
+    assert_eq!(
+        from_str(&"// 2+2\n5+7".to_string()).unwrap(),
+        Some(12),
+        "expected 12"
     );
 }
