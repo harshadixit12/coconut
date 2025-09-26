@@ -4,8 +4,10 @@ use lrpar::lrpar_mod;
 
 mod ast;
 mod instruction;
-use ast::Node;
-use instruction::Op;
+mod scope;
+mod bytecode;
+use instruction::eval;
+use bytecode::ast_to_bytecode;
 
 lrlex_mod!("coconut.l");
 lrpar_mod!("coconut.y");
@@ -18,7 +20,7 @@ fn main() {
             eval_file(args[1].clone());
         }
         else {
-            eval(&input);
+            run(&input);
         }
     }
     else {
@@ -29,7 +31,7 @@ fn main() {
 fn eval_file(input: String) {
     match fs::read_to_string(input) {
         Ok(content) => {
-            eval(&content);
+            run(&content);
         }
         Err(e) => {
             eprintln!("Error reading file: {}", e);
@@ -49,7 +51,7 @@ pub fn repl () {
                 if input.trim().is_empty() {
                     continue;
                 }
-                eval(&input);
+                run(&input);
             }
             _ => {}
         }
@@ -64,65 +66,19 @@ pub fn from_str (input: &String) -> Result<Option<u64>, String> {
         for e in errs {
             println!("Error: {}", e);
         }
+        let mut mainScope = scope::Scope::new();
 
         match res {
-            Some(Ok(r)) => Ok(eval_bytecode(r)),
+            Some(Ok(r)) => eval(r, &mut mainScope),
             _ => Err("Unable to evaluate input".to_string()),
         }
 }
 
-pub fn eval (input: &String) {
+pub fn run (input: &String) {
     match from_str(input) {
         Ok(Some(result)) => println!("{}", result),
         _ => println!("Error: {}", "Unable to evaluate input"),
     }
-}
-
-pub fn ast_to_bytecode (node: Node, ops: &mut Vec<Op>) {
-    match node {
-        Node::Add { lhs, rhs } => {
-            ast_to_bytecode(*lhs, ops);
-            ast_to_bytecode(*rhs, ops);
-            ops.push(Op::Add{});
-        }
-        Node::Mul {lhs, rhs} => {
-            ast_to_bytecode(*lhs, ops);
-            ast_to_bytecode(*rhs, ops);
-            ops.push(Op::Mull{});
-        }
-        Node::Number {value} => {
-            ops.push(Op::Push{value});
-        }
-    }
-}
-
-pub fn eval_bytecode (ast: Vec<Node>) -> Option<u64> {
-    let ops = &mut vec![];
-
-    for node in ast {
-        ast_to_bytecode(node, ops);
-    }
-
-    let mut stack: Vec<u64> = vec![];
-
-    for instruction in ops {
-        match instruction {
-            Op::Push { value } => stack.push(*value),
-            Op::Add => {
-                let rhs = stack.pop().unwrap();
-                let lhs = stack.pop().unwrap();
-                stack.push(lhs + rhs);
-            }
-            Op::Mull => {
-                let rhs = stack.pop().unwrap();
-                let lhs = stack.pop().unwrap();
-                stack.push(lhs * rhs);
-            }
-        }
-    }
-
-    return stack.pop();
-
 }
 
 #[test]
@@ -147,4 +103,20 @@ fn eval_comments() {
         Some(12),
         "expected 12"
     );
+}
+
+#[test]
+fn vars_declare_math () {
+    assert_eq!(
+        from_str(&"let x = 1; let y = 2; y+x;".to_string()).unwrap(),
+        Some(3)
+    )
+}
+
+#[test]
+fn vars_declare_reassign_math () {
+    assert_eq!(
+        from_str(&"let x = 1; let y = 2; x=3; y+x;".to_string()).unwrap(),
+        Some(5)
+    )
 }
